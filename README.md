@@ -53,7 +53,7 @@ dsh web
 
 首次使用会下载固定版本的 uv、Python 3.12 和锁定依赖，保存在当前 dsh 的专属目录。无需预装 Python，也无需克隆两个分支。目标平台为 macOS arm64/x64、Linux x64、Windows x64；各平台通过情况以发布验收报告为准。模型费用另计。
 
-具体的源码安装、升级、迁移和卸载见 [安装指南](docs/INSTALL.md)。
+具体的源码安装、升级、迁移和卸载见 [安装指南](docs/INSTALL.md)；从本机克隆构建、运行和验证见 [从源码构建与运行](docs/SOURCE_RUN.md)。
 
 ## 开始使用
 
@@ -109,6 +109,7 @@ dsh web
 | 文档 | 内容 |
 |---|---|
 | [安装指南](docs/INSTALL.md) | Agent 安装步骤、手动安装、模型配置、升级和排错 |
+| [从源码构建与运行](docs/SOURCE_RUN.md) | 本机克隆、构建、profile 安装、开发直连启动与验证命令 |
 | [使用流程](docs/WORKFLOWS.md) | Workspace、规划、写章、审稿、修订、导入导出 |
 | [模型测试](docs/BENCHMARK_TASKS.md) | 章节选择、大纲范围、任务 DAG 和结果解读 |
 | [审稿 DAG](docs/REVIEW_DAG_FRAMEWORK.md) | 标准评审框架与证据结构 |

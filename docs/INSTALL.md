@@ -79,6 +79,12 @@ dsh web
 
 回退时，停止 dsh，使用精确版本（例如 `dsh plugin --profile web add -w dsh-openwrite@0.2.8`）或重新安装上一份已验收 `.tgz`，再启动。官方预设采用版本 ID（如 `openwrite-0-2-1`），不会覆盖用户预设。请先把官方预设复制为 `openwrite-你的名称` 再修改；对被直接修改的同版本官方预设，插件保留文件并报告冲突。
 
+## 停止服务
+
+`dsh web` 在前台运行，在它的终端按 `Ctrl-C` 即停止；受管理写作后端随 dsh 进程一起退出，
+无需单独关闭，也不是开机自启服务。终端已关但端口仍被占用时，按端口清理
+（`lsof -ti:3080 | xargs kill`），再用 `pgrep -fl managed_runtime` 确认后端没有残留。
+
 ## 卸载
 
 停止 dsh 后执行：
@@ -102,6 +108,8 @@ bridge 的高级 `mode: external` / `baseUrl` 配置继续支持外部 Core，�
 源码安装使用 dsh 官方 GitHub source 机制：`dsh plugin --profile web add -w github:LiPu-jpg/Openwrite#v0.2.8`。仓库 `prepare` 自行构建三个插件，Core wheel 随固定提交提供，不访问相邻工作区。源码安装需要 Git 和构建依赖；建议普通用户优先使用已验收 Release 包。
 
 如果 pnpm 按本机策略阻止构建，按它显示的构建审批指引仅批准本包，再重试。安装脚本不放宽构建授权。源码安装也必须在发布验收中通过，不能用本机已编译目录代替。
+
+本地克隆、从源码构建、开发直连启动和验证命令，见 [从源码构建与运行](SOURCE_RUN.md)。
 
 ## 诊断
 
