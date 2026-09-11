@@ -70,7 +70,15 @@ dsh Workspace 是唯一的工作区身份：agent 工具调用按会话的不可
    就已写入 `data/manuscript/`，因此界面停在第 6 阶段 `reconcile`（验收调和）时正文并未丢失。
    该阶段要跑验收分析，**需要已配置模型档案**：未配置时任务会立刻失败，任务卡显示
    「尚未配置模型档案」（`MODEL_PROFILE_NOT_CONFIGURED`）。在「任务 → 模型」配置后重试该
-   任务即可从 `reconcile` 继续，不会重新拆分或覆盖已发布的章节。导出先选择“完整备份”或“交付成品”：备份会
+   任务即可从 `reconcile` 继续，不会重新拆分或覆盖已发布的章节。
+   调和阶段按章调用模型提取正文事实，**要求模型输出严格 YAML**（`observations`、
+   `state_updates`、`chapter_summary`，摘要 100–160 字，`temperature=0.2`、`max_tokens=3200`）。
+   模型格式不合规时任务以 `TASK_FAILED` 结束，错误文本就是 PyYAML 的扫描错误，例如
+   `while scanning a quoted scalar ... found unexpected end of stream`：实测某 Qwen3 系微调模型
+   4 次调用中有 3 次 `chapter_summary` 行只写了开引号、没有闭引号，而 `finish_reason=stop`、
+   `reasoning_tokens=0`、仅约 500 token——与长度预算和思考模式无关，属于模型自身结构化输出
+   不合规。解析端只接受严格 YAML，没有单字段兜底，`_settle_one` 的重试也只裁剪正文长度，
+   因此同一模型会稳定复现；遇到这种情况请换指令跟随更稳的模型，而不是反复重试。导出先选择“完整备份”或“交付成品”：备份会
    显示接纳/评审警告但仍可下载，交付会把结构、元数据、正文事实和评审问题作为阻断项。
    完整作品档案列出纳入、排除、缺失文件和校验和；恢复前必须选择新路径，检查 ID/引用
    重写与冲突，旧任务只归档、不自动续跑。在「资料 → 大纲 → 原生场景结构」可先只读
