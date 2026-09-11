@@ -103,6 +103,89 @@ dsh plugin --profile web remove -w dsh-openwrite
 
 bridge 的高级 `mode: external` / `baseUrl` 配置继续支持外部 Core，不接管外部进程。默认 `managed` 不需要配置端口。旧显式地址配置仍按外部模式解释。
 
+## Embedding（检索向量）
+
+「资料 → 检索」的向量模式需要 Embedding 档案，在「任务 → 模型」的 **Embedding** 页签配置。
+
+**本地（推荐，不需要 API Key）**：插件自带 FastEmbed 运行时，首次加载会从 Hugging Face
+下载 ONNX 模型（`bge-small-zh-v1.5` 约 182 MB，已缓存后加载约 0.4 秒）。
+
+| 字段 | 值 |
+|---|---|
+| Embedding 协议适配器 | `local`（也接受 `fastembed`、`on-device`） |
+| Embedding Model ID | `BAAI/bge-small-zh-v1.5`（默认值，中文句子向量 512 维） |
+| Embedding Base URL | 留空 |
+| Dimension | `512` |
+| Max tokens | `512` |
+| API Key | 留空 |
+
+**本地 OpenAI 兼容服务**（LM Studio、Ollama、vLLM 的 embedding 模型等）：协议适配器选
+`openai`，Base URL 填该服务的 `/v1` 地址，Model ID 填服务里真实的 embedding 模型名，
+**Dimension 必须等于该模型的真实输出维度**（如 `nomic-embed-text` 768、`bge-m3` 1024），
+API Key 需要非空。只提供聊天模型的端点通常没有 `/v1/embeddings` 路由，会返回
+`{"detail":"Not Found"}`，不能当 Embedding 服务用。
+
+**云端 API**：「openai」+ Base URL + 模型名（如 `text-embedding-3-small`）+ 对应维度 + API Key。
+
+保存后点「Embedding 测试」验证；维度不一致会报「Embedding 实际维度为 X，配置值为 Y」。切换
+Embedding 档案会改变检索索引记录的模型与维度指纹，索引会被判为需要重建。
+
+本地模型的缓存与离线：
+
+- 默认缓存在系统临时目录（macOS 为 `$TMPDIR/fastembed_cache`），会被系统清理。Core 子进程的
+  环境变量是白名单，不接收 `OPENWRITE_FASTEMBED_CACHE_DIR`，但会继承 `TMPDIR`，所以要用固定
+  缓存位置时改为启动 dsh 时覆盖：`TMPDIR="$HOME/.cache/openwrite-tmp" dsh web`。
+- 首次加载仍需要能访问 Hugging Face；受限网络可用 `HTTPS_PROXY`/`HTTP_PROXY`（这两个在白名单内）。
+
+## Chat 连接测试与思考型模型
+
+「任务 → 模型」的 Chat 页签「连接测试」用固定提示词（「这是连接测试。请只回复 OK。」）
+加 **`max_tokens=32`、temperature 0** 请求一次，要求返回的 `content` 非空，否则报
+`MODEL_TEST_EMPTY_RESPONSE`：连接测试失败：模型返回空内容，请调大最大输出后重试。
+
+对**思考型模型**（Qwen3 系、DeepSeek-R1 系等），32 个 token 可能全部被推理消耗，正文为空：
+
+| 实测请求（vLLM 上的 Qwen3 系 27B） | 结果 |
+|---|---|
+| `max_tokens=32`（等于连接测试） | `finish_reason=length`、`content=null`、`reasoning_tokens=32` ❌ |
+| `max_tokens=512` | `content="OK"`、`reasoning_tokens=41` ✅ |
+| `max_tokens=32` + `chat_template_kwargs.enable_thinking=false` | `content="OK"`、`reasoning_tokens=0` ✅ |
+| `max_tokens=32` + `thinking={"type":"disabled"}`（档案的 `thinking_modes` 会发这个） | 无效，仍被推理占满 ❌ |
+| 提示词加 `/no_think` | 无效 ❌ |
+
+因此这类模型的对策是：
+
+1. **服务端关闭思考**（唯一可靠方式）：vLLM 启动时加
+   `--default-chat-template-kwargs '{"enable_thinking": false}'`，或让服务默认不思考。
+   OpenWrite 目前不能从 UI 发送任意 `extra_body`，所以只能在服务端设置。
+2. **无视这条测试继续使用**：真正的写章、评审用档案里的 `max_output_tokens`（可到上万），
+   不受 32 token 限制；但要留意小预算的内部调用同样可能拿到空内容。
+3. **另建一个非思考模型档案**做连通性测试，把任务路由指向真正要用的模型。
+
+档案里的 `thinking_modes` 只覆盖 `chapter_write` / `review` / `revision` 三个操作，取值
+`enabled` / `disabled` / `omit`，发送的是 `thinking: {"type": ...}`；只对识别该字段的供应商
+有效，上面那台 vLLM 会忽略它。
+
+### 对创作的影响
+
+正文写作本身受影响很小：写章调用的预算远大于推理开销（`agent/writer.py` 用
+`max_tokens=max(16384, 目标字数×2)`，辅助调用 4096/8192，连接测试 32 是唯一的小预算）。
+
+Core 明确把「只返回推理」「输出被截断」「返回空内容」当作可恢复错误，并各自有恢复路径：
+
+| 错误码 | 触发条件 | 恢复方式 |
+|---|---|---|
+| `MODEL_REASONING_ONLY` | 有推理内容但没有最终答案 | 编排器用档案 `max_output_tokens` 重试，并追加「压缩内部推理，立即从最终内容开始输出」 |
+| `MODEL_OUTPUT_TRUNCATED` | `finish_reason` 为 `length`/`max_tokens`/`incomplete` | 工具循环把预算提到 `min(当前×2, context_tokens÷2)`；写章与评审按章节/评审域拆分重试 |
+| `MODEL_EMPTY_RESPONSE` | 无内容且无推理 | 同上重试；连接测试直接报错 |
+
+实际代价是**重试**：更慢，且重试预算可能一次涨到档案的 `max_output_tokens`，费用与耗时都会上升；
+工具参数被推理截断时还会先报 `MALFORMED_TOOL_ARGUMENTS`。
+
+另外，请求里的 `max_tokens` 会原样取档案值（`llm/client.py`：未显式指定时用
+`config.max_tokens`）。把 `max_output_tokens` 填成 130000 时，长篇小说后段提示词变长，容易顶到
+服务端的 `max_model_len`（上面那台是 262144）而被拒绝或提前截断，建议控制在 32768–65536。
+
 ## GitHub 源码安装
 
 源码安装使用 dsh 官方 GitHub source 机制：`dsh plugin --profile web add -w github:LiPu-jpg/Openwrite#v0.2.8`。仓库 `prepare` 自行构建三个插件，Core wheel 随固定提交提供，不访问相邻工作区。源码安装需要 Git 和构建依赖；建议普通用户优先使用已验收 Release 包。
